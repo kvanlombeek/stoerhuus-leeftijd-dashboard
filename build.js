@@ -36,6 +36,15 @@ function median(values) {
     : sorted[mid];
 }
 
+// Reads a "Geslacht" column (M/V, Man/Vrouw, ...). Returns "M", "V", or null
+// (missing/unrecognized) — null rows are counted but left out of the pyramid.
+function normalizeGender(raw) {
+  const first = String(raw ?? "").trim().toLowerCase().charAt(0);
+  if (first === "m") return "M";
+  if (first === "v") return "V";
+  return null;
+}
+
 function round(n, decimals) {
   const f = 10 ** decimals;
   return Math.round(n * f) / f;
@@ -52,6 +61,7 @@ function quantile(sorted, q) {
 }
 
 function boxplotStats(ages) {
+  if (ages.length === 0) return null;
   const sorted = [...ages].sort((a, b) => a - b);
   const q1 = quantile(sorted, 0.25);
   const q3 = quantile(sorted, 0.75);
@@ -91,6 +101,11 @@ for (const year of years) {
 
 const totalUnits = new Set(rows.map((r) => r.Unit)).size;
 
+const genderKey = Object.keys(rows[0]).find((k) => k.trim().toLowerCase() === "geslacht");
+if (!genderKey) {
+  console.warn('No "Geslacht" column found — the gender-split age pyramid will be empty until one is added.');
+}
+
 // Age-histogram bucket edges: decades, sized to the oldest age seen anywhere.
 const allAgesEver = years.flatMap((year) => {
   const refDate = new Date(year, 11, 31);
@@ -103,13 +118,28 @@ const bucketLabels = bucketEdges.map((start, i) =>
   i === bucketEdges.length - 1 ? `${start}+` : `${start}-${start + 9}`,
 );
 
+function bucketIndex(age) {
+  return Math.min(Math.floor(age / 10), bucketLabels.length - 1);
+}
+
 function histogramFor(ages) {
   const counts = new Array(bucketLabels.length).fill(0);
-  for (const age of ages) {
-    const idx = Math.min(Math.floor(age / 10), bucketLabels.length - 1);
-    counts[idx] += 1;
-  }
+  for (const age of ages) counts[bucketIndex(age)] += 1;
   return counts;
+}
+
+// Per-gender bucket counts, for the population-pyramid chart.
+function histogramByGenderFor(present, ages) {
+  const male = new Array(bucketLabels.length).fill(0);
+  const female = new Array(bucketLabels.length).fill(0);
+  let unknown = 0;
+  present.forEach((r, idx) => {
+    const gender = genderKey ? normalizeGender(r[genderKey]) : null;
+    if (gender === "M") male[bucketIndex(ages[idx])] += 1;
+    else if (gender === "V") female[bucketIndex(ages[idx])] += 1;
+    else unknown += 1;
+  });
+  return { male, female, unknown };
 }
 
 const series = {
@@ -121,9 +151,14 @@ const series = {
   children: [],
   moveIns: [],
   moveOuts: [],
+  maleCount: [],
+  femaleCount: [],
+  sexRatio: [],
 };
 const ageHistogramByYear = [];
 const ageBoxplotByYear = [];
+const agePyramidByYear = [];
+let unknownGenderTotal = 0;
 
 for (let i = 0; i < years.length; i++) {
   const year = years[i];
@@ -140,7 +175,22 @@ for (let i = 0; i < years.length; i++) {
   series.avgHouseholdSize.push(round(present.length / units.size, 2));
   series.children.push(ages.filter((age) => age < 18).length);
   ageHistogramByYear.push(histogramFor(ages));
-  ageBoxplotByYear.push(boxplotStats(ages));
+
+  const maleAges = [];
+  const femaleAges = [];
+  present.forEach((r, idx) => {
+    const gender = genderKey ? normalizeGender(r[genderKey]) : null;
+    if (gender === "M") maleAges.push(ages[idx]);
+    else if (gender === "V") femaleAges.push(ages[idx]);
+  });
+  ageBoxplotByYear.push({ male: boxplotStats(maleAges), female: boxplotStats(femaleAges) });
+  series.maleCount.push(maleAges.length);
+  series.femaleCount.push(femaleAges.length);
+  series.sexRatio.push(femaleAges.length > 0 ? round((maleAges.length / femaleAges.length) * 100, 0) : null);
+
+  const pyramid = histogramByGenderFor(present, ages);
+  agePyramidByYear.push(pyramid);
+  unknownGenderTotal += pyramid.unknown;
 
   if (i === 0) {
     series.moveIns.push(null);
@@ -166,7 +216,14 @@ const data = {
     countsByYear: ageHistogramByYear,
   },
   ageBoxplot: ageBoxplotByYear,
+  agePyramid: {
+    buckets: bucketLabels,
+    byYear: agePyramidByYear,
+  },
 };
 
 writeFileSync("data.json", JSON.stringify(data, null, 2));
 console.log(`Wrote data.json from ${sourceFile} (${years.length} years, ${rows.length} residents total).`);
+if (unknownGenderTotal > 0) {
+  console.warn(`${unknownGenderTotal} resident-year entries have no recognized gender (expected "M" or "V") and are left out of the age pyramid.`);
+}

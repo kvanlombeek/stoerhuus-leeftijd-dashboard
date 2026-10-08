@@ -91,8 +91,9 @@
   .card h2 { font-size: 14px; margin: 0 0 2px; color: var(--text-primary); }
   .card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
 
-  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .kpi-row { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  @media (max-width: 560px) { .kpi-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
   .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
   .tile .label { color: var(--text-secondary); font-size: 12px; margin-bottom: 6px; }
   .tile .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -197,10 +198,14 @@
 
   <div class="card">
     <h2>Leeftijdsspreiding per jaar</h2>
-    <div class="sub">Box plot: mediaan, kwartielen en bereik van alle leeftijden per jaar</div>
+    <div class="sub">Box plot per geslacht: mediaan, kwartielen en bereik van de leeftijden per jaar</div>
     <div class="chart-shell" id="boxplot-chart-shell">
       <svg class="chart" id="boxplot-chart"></svg>
       <div class="tooltip" id="boxplot-tooltip"></div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="key" style="background:var(--series-2)"></span>Vrouwen</div>
+      <div class="item"><span class="key" style="background:var(--series-1)"></span>Mannen</div>
     </div>
   </div>
 
@@ -208,13 +213,17 @@
     <div class="card-head">
       <div>
         <h2>Leeftijdsverdeling</h2>
-        <div class="sub">Aantal bewoners per leeftijdsgroep</div>
+        <div class="sub">Aantal bewoners per leeftijdsgroep, vrouwen links / mannen rechts</div>
       </div>
       <select class="year-select" id="histogram-year"></select>
     </div>
     <div class="chart-shell" id="histogram-chart-shell">
       <svg class="chart" id="histogram-chart"></svg>
       <div class="tooltip" id="histogram-tooltip"></div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="key" style="background:var(--series-2)"></span>Vrouwen</div>
+      <div class="item"><span class="key" style="background:var(--series-1)"></span>Mannen</div>
     </div>
   </div>
 
@@ -275,6 +284,7 @@ function renderKpiRow(data) {
     { label: "Bewoonde eenheden", value: `${fmtInt(data.series.unitsOccupied[i])}/${fmtInt(data.totalUnits)}`, delta: signedDelta(data.series.unitsOccupied[i], data.series.unitsOccupied[p], 0), spark: data.series.unitsOccupied },
     { label: "Gem. huishoudgrootte", value: fmt2(data.series.avgHouseholdSize[i]), delta: signedDelta(data.series.avgHouseholdSize[i], data.series.avgHouseholdSize[p], 2), spark: data.series.avgHouseholdSize },
     { label: "Aantal kinderen (-18 jaar)", value: fmtInt(data.series.children[i]), delta: signedDelta(data.series.children[i], data.series.children[p], 0), spark: data.series.children },
+    { label: "Mannen per 100 vrouwen", value: fmtInt(data.series.sexRatio[i]), delta: signedDelta(data.series.sexRatio[i], data.series.sexRatio[p], 0), spark: data.series.sexRatio },
   ];
   const row = document.getElementById("kpi-row");
   row.innerHTML = tiles.map((t) => `
@@ -406,7 +416,7 @@ function renderAgeChart(data) {
   new ResizeObserver(draw).observe(shell);
 }
 
-// ---- Box plot: age distribution per year ----
+// ---- Box plot: age distribution per year, one box per sex ----
 function renderBoxplotChart(data) {
   const shell = document.getElementById("boxplot-chart-shell");
   const svg = document.getElementById("boxplot-chart");
@@ -421,13 +431,16 @@ function renderBoxplotChart(data) {
     const years = data.years;
     const stats = data.ageBoxplot;
 
-    const allVals = stats.flatMap((s) => [s.whiskerLow, s.whiskerHigh, ...s.outliers]);
+    const allVals = stats.flatMap((s) => [s.male, s.female])
+      .filter(Boolean)
+      .flatMap((s) => [s.whiskerLow, s.whiskerHigh, ...s.outliers]);
     const min = Math.max(0, Math.floor(Math.min(...allVals) / 5) * 5 - 5);
     const max = Math.ceil(Math.max(...allVals) / 5) * 5 + 5;
 
     const groupW = plotW / years.length;
-    const boxW = Math.min(36, groupW * 0.5);
-    const capW = boxW * 0.5;
+    const boxW = Math.min(22, groupW * 0.3);
+    const boxGap = 6;
+    const capW = boxW * 0.6;
 
     const yAt = (v) => padT + plotH - ((v - min) / (max - min)) * plotH;
 
@@ -440,28 +453,38 @@ function renderBoxplotChart(data) {
       gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${Math.round(v)}</text>`;
     }
 
+    function boxSvg(cx, s, color) {
+      if (!s) return "";
+      const x0 = cx - boxW / 2;
+      let out = "";
+      out += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.q3).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      out += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.q1).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      out += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.whiskerHigh).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      out += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerLow).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      out += `<rect x="${x0.toFixed(1)}" y="${yAt(s.q3).toFixed(1)}" width="${boxW.toFixed(1)}" height="${(yAt(s.q1) - yAt(s.q3)).toFixed(1)}" rx="4" fill="${color}" fill-opacity="0.15" stroke="${color}" stroke-width="2" />`;
+      out += `<line x1="${x0.toFixed(1)}" x2="${(x0 + boxW).toFixed(1)}" y1="${yAt(s.median).toFixed(1)}" y2="${yAt(s.median).toFixed(1)}" stroke="${color}" stroke-width="2" />`;
+      s.outliers.forEach((age) => {
+        out += `<circle cx="${cx.toFixed(1)}" cy="${yAt(age).toFixed(1)}" r="3" fill="var(--context-gray)" stroke="var(--surface-1)" stroke-width="2" />`;
+      });
+      return out;
+    }
+
     let boxes = "";
     let xLabels = "";
+    let hits = "";
     years.forEach((y, i) => {
-      const cx = padL + groupW * (i + 0.5);
-      xLabels += `<text class="axis-label" x="${cx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${y}</text>`;
+      const groupCx = padL + groupW * (i + 0.5);
+      xLabels += `<text class="axis-label" x="${groupCx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${y}</text>`;
 
       const s = stats[i];
-      const x0 = cx - boxW / 2;
+      const femaleCx = groupCx - boxW / 2 - boxGap / 2;
+      const maleCx = groupCx + boxW / 2 + boxGap / 2;
 
-      boxes += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.q3).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
-      boxes += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.q1).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
-      boxes += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.whiskerHigh).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
-      boxes += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerLow).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      boxes += boxSvg(femaleCx, s.female, "var(--series-2)");
+      boxes += boxSvg(maleCx, s.male, "var(--series-1)");
 
-      boxes += `<rect x="${x0.toFixed(1)}" y="${yAt(s.q3).toFixed(1)}" width="${boxW.toFixed(1)}" height="${(yAt(s.q1) - yAt(s.q3)).toFixed(1)}" rx="4" fill="var(--series-1)" fill-opacity="0.15" stroke="var(--series-1)" stroke-width="2" />`;
-      boxes += `<line x1="${x0.toFixed(1)}" x2="${(x0 + boxW).toFixed(1)}" y1="${yAt(s.median).toFixed(1)}" y2="${yAt(s.median).toFixed(1)}" stroke="var(--series-1)" stroke-width="2" />`;
-
-      s.outliers.forEach((age) => {
-        boxes += `<circle cx="${cx.toFixed(1)}" cy="${yAt(age).toFixed(1)}" r="3" fill="var(--context-gray)" stroke="var(--surface-1)" stroke-width="2" />`;
-      });
-
-      boxes += `<rect class="hit" data-i="${i}" x="${(cx - groupW / 2).toFixed(1)}" y="${padT}" width="${groupW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+      hits += `<rect class="hit" data-i="${i}" data-s="female" x="${(femaleCx - boxW / 2 - 2).toFixed(1)}" y="${padT}" width="${(boxW + 4).toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+      hits += `<rect class="hit" data-i="${i}" data-s="male" x="${(maleCx - boxW / 2 - 2).toFixed(1)}" y="${padT}" width="${(boxW + 4).toFixed(1)}" height="${plotH.toFixed(1)}" />`;
     });
 
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -470,6 +493,7 @@ function renderBoxplotChart(data) {
       ${gridSvg}
       ${xLabels}
       ${boxes}
+      ${hits}
     `;
 
     svg.querySelectorAll("rect.hit").forEach((hit) => {
@@ -481,16 +505,20 @@ function renderBoxplotChart(data) {
 
     function showTip(e) {
       const i = Number(e.currentTarget.dataset.i);
-      const s = stats[i];
-      const cx = padL + groupW * (i + 0.5);
+      const side = e.currentTarget.dataset.s;
+      const s = stats[i][side];
+      if (!s) return;
+      const rect = e.currentTarget;
+      const name = side === "male" ? "Mannen" : "Vrouwen";
+      const color = side === "male" ? "var(--series-1)" : "var(--series-2)";
       tooltip.style.display = "block";
-      tooltip.style.left = cx + "px";
+      tooltip.style.left = (Number(rect.getAttribute("x")) + boxW / 2) + "px";
       tooltip.style.top = yAt(s.q3) + "px";
       tooltip.innerHTML = `
-        <div class="t-year">${years[i]}</div>
+        <div class="t-year">${years[i]} — ${name}</div>
         <div class="t-row"><span class="t-name">Max</span><span class="t-val">${s.max}</span></div>
         <div class="t-row"><span class="t-name">Q3</span><span class="t-val">${fmt1(s.q3)}</span></div>
-        <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Mediaan</span><span class="t-val">${fmt1(s.median)}</span></div>
+        <div class="t-row"><span class="t-key" style="background:${color}"></span><span class="t-name">Mediaan</span><span class="t-val">${fmt1(s.median)}</span></div>
         <div class="t-row"><span class="t-name">Q1</span><span class="t-val">${fmt1(s.q1)}</span></div>
         <div class="t-row"><span class="t-name">Min</span><span class="t-val">${s.min}</span></div>
       `;
@@ -591,7 +619,7 @@ function renderMovesChart(data) {
   new ResizeObserver(draw).observe(shell);
 }
 
-// ---- Bar chart: age histogram for a selected year ----
+// ---- Population pyramid: age distribution per year, women left / men right ----
 function renderHistogramChart(data) {
   const shell = document.getElementById("histogram-chart-shell");
   const svg = document.getElementById("histogram-chart");
@@ -604,47 +632,69 @@ function renderHistogramChart(data) {
 
   function draw() {
     const yearIndex = data.years.indexOf(Number(yearSelect.value));
-    const buckets = data.ageHistogram.buckets;
-    const counts = data.ageHistogram.countsByYear[yearIndex];
+    // Oldest bucket at the top, youngest at the bottom (standard pyramid reading).
+    const buckets = [...data.agePyramid.buckets].reverse();
+    const pyramid = data.agePyramid.byYear[yearIndex];
+    const male = [...pyramid.male].reverse();
+    const female = [...pyramid.female].reverse();
 
     const width = shell.clientWidth || 600;
-    const height = 240;
-    const padL = 30, padR = 12, padT = 16, padB = 28;
-    const plotW = width - padL - padR, plotH = height - padT - padB;
+    const rowH = 28;
+    const padT = 10, padB = 24;
+    const height = buckets.length * rowH + padT + padB;
+    const gutter = 48; // center column that carries the bucket labels
+    const padOuter = 34; // room for the outer tick labels
+    const halfW = (width - gutter - padOuter * 2) / 2;
+    const leftEdge = padOuter;
+    const centerX = padOuter + halfW;
+    const rightStart = centerX + gutter;
 
-    const maxV = Math.max(1, ...counts);
-    const groupW = plotW / buckets.length;
-    const barW = Math.min(32, groupW * 0.6);
+    const maxV = Math.max(1, ...male, ...female);
+    const scale = (v) => (v / maxV) * halfW;
 
-    const yAt = (v) => padT + plotH - (v / maxV) * plotH;
+    const totalKnown = male.reduce((a, b) => a + b, 0) + female.reduce((a, b) => a + b, 0);
 
+    const ticks = 4;
     let gridSvg = "";
-    const ticks = Math.min(4, maxV);
     for (let t = 0; t <= ticks; t++) {
       const v = Math.round((t / ticks) * maxV);
-      const y = yAt(v);
-      gridSvg += `<line class="gridline" x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`;
-      gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v}</text>`;
+      const dx = scale(v);
+      gridSvg += `<line class="gridline" x1="${(centerX - dx).toFixed(1)}" x2="${(centerX - dx).toFixed(1)}" y1="${padT}" y2="${(height - padB).toFixed(1)}" />`;
+      gridSvg += `<line class="gridline" x1="${(rightStart + dx).toFixed(1)}" x2="${(rightStart + dx).toFixed(1)}" y1="${padT}" y2="${(height - padB).toFixed(1)}" />`;
+      if (t > 0) {
+        gridSvg += `<text class="axis-label" x="${(centerX - dx).toFixed(1)}" y="${height - 6}" text-anchor="middle">${v}</text>`;
+        gridSvg += `<text class="axis-label" x="${(rightStart + dx).toFixed(1)}" y="${height - 6}" text-anchor="middle">${v}</text>`;
+      }
     }
 
     let bars = "";
-    let xLabels = "";
+    let labels = "";
     buckets.forEach((label, i) => {
-      const cx = padL + groupW * (i + 0.5);
-      xLabels += `<text class="axis-label" x="${cx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${label}</text>`;
-      const x = cx - barW / 2;
-      const h = (counts[i] / maxV) * plotH;
-      bars += `<rect class="hit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
-      bars += `<rect x="${x.toFixed(1)}" y="${yAt(counts[i]).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 0).toFixed(1)}" rx="4" fill="var(--series-1)" />`;
-      if (counts[i] > 0) bars += `<text class="axis-label" x="${cx.toFixed(1)}" y="${(yAt(counts[i]) - 6).toFixed(1)}" text-anchor="middle">${counts[i]}</text>`;
+      const cy = padT + i * rowH;
+      const barH = rowH - 6;
+      const fW = scale(female[i]);
+      const mW = scale(male[i]);
+
+      labels += `<text class="axis-label" x="${centerX + gutter / 2}" y="${(cy + barH / 2 + 4).toFixed(1)}" text-anchor="middle">${label}</text>`;
+
+      bars += `<rect x="${(centerX - fW).toFixed(1)}" y="${cy.toFixed(1)}" width="${fW.toFixed(1)}" height="${barH}" rx="4" fill="var(--series-2)" />`;
+      bars += `<rect x="${rightStart.toFixed(1)}" y="${cy.toFixed(1)}" width="${mW.toFixed(1)}" height="${barH}" rx="4" fill="var(--series-1)" />`;
+
+      bars += `<rect class="hit" data-i="${i}" data-s="female" x="${leftEdge.toFixed(1)}" y="${cy.toFixed(1)}" width="${(centerX - leftEdge).toFixed(1)}" height="${barH}" />`;
+      bars += `<rect class="hit" data-i="${i}" data-s="male" x="${rightStart.toFixed(1)}" y="${cy.toFixed(1)}" width="${(width - padOuter - rightStart).toFixed(1)}" height="${barH}" />`;
     });
+
+    const emptyMsg = totalKnown === 0
+      ? `<text class="axis-label" x="${width / 2}" y="${height / 2}" text-anchor="middle">Nog geen geslachtsgegevens in de bron (kolom "Geslacht")</text>`
+      : "";
 
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.innerHTML = `
-      <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
+      <line class="baseline" x1="${centerX}" x2="${centerX}" y1="${padT}" y2="${(height - padB).toFixed(1)}" style="display:none" />
       ${gridSvg}
-      ${xLabels}
       ${bars}
+      ${labels}
+      ${emptyMsg}
     `;
 
     svg.querySelectorAll("rect.hit").forEach((hit) => {
@@ -656,13 +706,17 @@ function renderHistogramChart(data) {
 
     function showTip(e) {
       const i = Number(e.currentTarget.dataset.i);
+      const side = e.currentTarget.dataset.s;
       const rect = e.currentTarget;
+      const value = side === "male" ? male[i] : female[i];
+      const name = side === "male" ? "Mannen" : "Vrouwen";
+      const color = side === "male" ? "var(--series-1)" : "var(--series-2)";
       tooltip.style.display = "block";
-      tooltip.style.left = (Number(rect.getAttribute("x")) + barW / 2) + "px";
-      tooltip.style.top = padT + "px";
+      tooltip.style.left = (Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2) + "px";
+      tooltip.style.top = rect.getAttribute("y") + "px";
       tooltip.innerHTML = `
         <div class="t-year">${buckets[i]} jaar</div>
-        <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Bewoners</span><span class="t-val">${counts[i]}</span></div>
+        <div class="t-row"><span class="t-key" style="background:${color}"></span><span class="t-name">${name}</span><span class="t-val">${value}</span></div>
       `;
     }
   }
