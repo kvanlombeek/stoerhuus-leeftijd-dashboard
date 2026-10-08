@@ -94,9 +94,11 @@
   .tile .delta { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
   .tile svg.spark { display: block; margin-top: 8px; width: 100%; height: 28px; overflow: visible; }
 
-  .hero-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 4px; }
-  .hero-value { font-size: 48px; font-weight: 600; line-height: 1; }
+  .hero-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .hero-label { color: var(--text-muted); font-size: 12px; margin-bottom: 2px; }
+  .hero-value { font-size: 40px; font-weight: 600; line-height: 1; }
   .hero-delta { color: var(--text-secondary); font-size: 13px; }
+  .chart-title-gap { margin-top: 18px; margin-bottom: 8px; }
 
   .chart-shell { position: relative; }
   svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
@@ -127,6 +129,12 @@
   .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-top: 8px; flex-wrap: wrap; }
   .legend .item { display: flex; align-items: center; gap: 6px; }
   .legend .key { width: 12px; height: 2px; border-radius: 1px; }
+
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 2px; }
+  .year-select {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
 
   .table-toggle {
     border: 1px solid var(--border); background: transparent; color: var(--text-secondary);
@@ -160,23 +168,48 @@
   <div class="kpi-row" id="kpi-row"></div>
 
   <div class="card">
+    <h2>Gemiddelde leeftijd</h2>
+    <div class="sub">Per jaar, over alle bewoners</div>
     <div class="hero-row">
       <div>
-        <div class="sub">Gemiddelde leeftijd, laatste jaar</div>
+        <div class="hero-label">Laatste jaar</div>
         <div class="hero-value" id="hero-value">—</div>
       </div>
       <div class="hero-delta" id="hero-delta"></div>
     </div>
-    <div class="sub" style="margin-top:10px;">Gemiddelde leeftijd per jaar (mediaan in grijs als context)</div>
+    <div class="sub chart-title-gap">Verloop sinds 2020</div>
     <div class="chart-shell" id="age-chart-shell">
       <svg class="chart" id="age-chart"></svg>
       <div class="tooltip" id="age-tooltip"></div>
     </div>
     <button class="table-toggle" data-target="age-table">Toon als tabel</button>
     <table class="data-table" id="age-table">
-      <thead><tr><th>Jaar</th><th>Gem. leeftijd</th><th>Mediaan</th><th>Bewoners</th><th>Eenheden</th><th>Huishoudgrootte</th><th>Ingetrokken</th><th>Uitgetrokken</th></tr></thead>
+      <thead><tr><th>Jaar</th><th>Gem. leeftijd</th><th>Mediaan</th><th>Bewoners</th><th>Kinderen</th><th>Eenheden</th><th>Huishoudgrootte</th><th>Ingetrokken</th><th>Uitgetrokken</th></tr></thead>
       <tbody></tbody>
     </table>
+  </div>
+
+  <div class="card">
+    <h2>Leeftijdsspreiding per jaar</h2>
+    <div class="sub">Box plot: mediaan, kwartielen en bereik van alle leeftijden per jaar</div>
+    <div class="chart-shell" id="boxplot-chart-shell">
+      <svg class="chart" id="boxplot-chart"></svg>
+      <div class="tooltip" id="boxplot-tooltip"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Leeftijdsverdeling</h2>
+        <div class="sub">Aantal bewoners per leeftijdsgroep</div>
+      </div>
+      <select class="year-select" id="histogram-year"></select>
+    </div>
+    <div class="chart-shell" id="histogram-chart-shell">
+      <svg class="chart" id="histogram-chart"></svg>
+      <div class="tooltip" id="histogram-tooltip"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -233,9 +266,9 @@ function renderKpiRow(data) {
   const p = i - 1;
   const tiles = [
     { label: "Bewoners", value: fmtInt(data.series.residents[i]), delta: signedDelta(data.series.residents[i], data.series.residents[p], 0), spark: data.series.residents },
-    { label: "Bewoonde eenheden", value: fmtInt(data.series.unitsOccupied[i]), delta: signedDelta(data.series.unitsOccupied[i], data.series.unitsOccupied[p], 0), spark: data.series.unitsOccupied },
+    { label: "Bewoonde eenheden", value: `${fmtInt(data.series.unitsOccupied[i])}/${fmtInt(data.totalUnits)}`, delta: signedDelta(data.series.unitsOccupied[i], data.series.unitsOccupied[p], 0), spark: data.series.unitsOccupied },
     { label: "Gem. huishoudgrootte", value: fmt2(data.series.avgHouseholdSize[i]), delta: signedDelta(data.series.avgHouseholdSize[i], data.series.avgHouseholdSize[p], 2), spark: data.series.avgHouseholdSize },
-    { label: "Mediaan leeftijd", value: fmt1(data.series.medianAge[i]), delta: signedDelta(data.series.medianAge[i], data.series.medianAge[p], 1), spark: data.series.medianAge },
+    { label: "Aantal kinderen (-18 jaar)", value: fmtInt(data.series.children[i]), delta: signedDelta(data.series.children[i], data.series.children[p], 0), spark: data.series.children },
   ];
   const row = document.getElementById("kpi-row");
   row.innerHTML = tiles.map((t) => `
@@ -263,7 +296,8 @@ function renderDataTable(data) {
       <td>${fmt1(data.series.avgAge[i])}</td>
       <td>${fmt1(data.series.medianAge[i])}</td>
       <td>${fmtInt(data.series.residents[i])}</td>
-      <td>${fmtInt(data.series.unitsOccupied[i])}</td>
+      <td>${fmtInt(data.series.children[i])}</td>
+      <td>${fmtInt(data.series.unitsOccupied[i])}/${fmtInt(data.totalUnits)}</td>
       <td>${fmt2(data.series.avgHouseholdSize[i])}</td>
       <td>${fmtInt(data.series.moveIns[i])}</td>
       <td>${fmtInt(data.series.moveOuts[i])}</td>
@@ -278,7 +312,7 @@ function renderDataTable(data) {
   });
 }
 
-// ---- Line chart: average age (accent) + median age (gray context) ----
+// ---- Line chart: average age ----
 function renderAgeChart(data) {
   const shell = document.getElementById("age-chart-shell");
   const svg = document.getElementById("age-chart");
@@ -292,10 +326,8 @@ function renderAgeChart(data) {
 
     const years = data.years;
     const avg = data.series.avgAge;
-    const med = data.series.medianAge;
-    const allVals = avg.concat(med);
-    const min = Math.floor(Math.min(...allVals) - 2);
-    const max = Math.ceil(Math.max(...allVals) + 2);
+    const min = Math.floor(Math.min(...avg) - 2);
+    const max = Math.ceil(Math.max(...avg) + 2);
 
     const xAt = (i) => padL + (i / (years.length - 1)) * plotW;
     const yAt = (v) => padT + plotH - ((v - min) / (max - min)) * plotH;
@@ -315,13 +347,10 @@ function renderAgeChart(data) {
     });
 
     const avgPath = avg.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
-    const medPath = med.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
 
     const lastI = years.length - 1;
     const avgEnd = `<circle cx="${xAt(lastI).toFixed(1)}" cy="${yAt(avg[lastI]).toFixed(1)}" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" />
       <text class="direct-label" x="${(xAt(lastI) + 8).toFixed(1)}" y="${(yAt(avg[lastI]) + 4).toFixed(1)}">${fmt1(avg[lastI])}</text>`;
-    const medEnd = `<circle cx="${xAt(lastI).toFixed(1)}" cy="${yAt(med[lastI]).toFixed(1)}" r="3" fill="var(--context-gray)" stroke="var(--surface-1)" stroke-width="2" />
-      <text class="direct-label context" x="${(xAt(lastI) + 8).toFixed(1)}" y="${(yAt(med[lastI]) + 4).toFixed(1)}">mediaan ${fmt1(med[lastI])}</text>`;
 
     let hits = "";
     years.forEach((y, i) => {
@@ -333,9 +362,7 @@ function renderAgeChart(data) {
       <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
       ${gridSvg}
       ${xLabels}
-      <path d="${medPath}" fill="none" stroke="var(--context-gray)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
       <path d="${avgPath}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-      ${medEnd}
       ${avgEnd}
       <line class="crosshair" id="age-crosshair" x1="0" x2="0" y1="${padT}" y2="${padT + plotH}" style="display:none" />
       ${hits}
@@ -365,7 +392,101 @@ function renderAgeChart(data) {
       tooltip.innerHTML = `
         <div class="t-year">${years[i]}</div>
         <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Gem. leeftijd</span><span class="t-val">${fmt1(avg[i])}</span></div>
-        <div class="t-row"><span class="t-key" style="background:var(--context-gray)"></span><span class="t-name">Mediaan</span><span class="t-val">${fmt1(med[i])}</span></div>
+      `;
+    }
+  }
+
+  draw();
+  new ResizeObserver(draw).observe(shell);
+}
+
+// ---- Box plot: age distribution per year ----
+function renderBoxplotChart(data) {
+  const shell = document.getElementById("boxplot-chart-shell");
+  const svg = document.getElementById("boxplot-chart");
+  const tooltip = document.getElementById("boxplot-tooltip");
+
+  function draw() {
+    const width = shell.clientWidth || 600;
+    const height = 280;
+    const padL = 32, padR = 16, padT = 16, padB = 28;
+    const plotW = width - padL - padR, plotH = height - padT - padB;
+
+    const years = data.years;
+    const stats = data.ageBoxplot;
+
+    const allVals = stats.flatMap((s) => [s.whiskerLow, s.whiskerHigh, ...s.outliers]);
+    const min = Math.max(0, Math.floor(Math.min(...allVals) / 5) * 5 - 5);
+    const max = Math.ceil(Math.max(...allVals) / 5) * 5 + 5;
+
+    const groupW = plotW / years.length;
+    const boxW = Math.min(36, groupW * 0.5);
+    const capW = boxW * 0.5;
+
+    const yAt = (v) => padT + plotH - ((v - min) / (max - min)) * plotH;
+
+    const ticks = 5;
+    let gridSvg = "";
+    for (let t = 0; t <= ticks; t++) {
+      const v = min + (t / ticks) * (max - min);
+      const y = yAt(v);
+      gridSvg += `<line class="gridline" x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`;
+      gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+
+    let boxes = "";
+    let xLabels = "";
+    years.forEach((y, i) => {
+      const cx = padL + groupW * (i + 0.5);
+      xLabels += `<text class="axis-label" x="${cx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${y}</text>`;
+
+      const s = stats[i];
+      const x0 = cx - boxW / 2;
+
+      boxes += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.q3).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      boxes += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${yAt(s.q1).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      boxes += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerHigh).toFixed(1)}" y2="${yAt(s.whiskerHigh).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+      boxes += `<line x1="${(cx - capW / 2).toFixed(1)}" x2="${(cx + capW / 2).toFixed(1)}" y1="${yAt(s.whiskerLow).toFixed(1)}" y2="${yAt(s.whiskerLow).toFixed(1)}" stroke="var(--baseline)" stroke-width="1.5" />`;
+
+      boxes += `<rect x="${x0.toFixed(1)}" y="${yAt(s.q3).toFixed(1)}" width="${boxW.toFixed(1)}" height="${(yAt(s.q1) - yAt(s.q3)).toFixed(1)}" rx="4" fill="var(--series-1)" fill-opacity="0.15" stroke="var(--series-1)" stroke-width="2" />`;
+      boxes += `<line x1="${x0.toFixed(1)}" x2="${(x0 + boxW).toFixed(1)}" y1="${yAt(s.median).toFixed(1)}" y2="${yAt(s.median).toFixed(1)}" stroke="var(--series-1)" stroke-width="2" />`;
+
+      s.outliers.forEach((age) => {
+        boxes += `<circle cx="${cx.toFixed(1)}" cy="${yAt(age).toFixed(1)}" r="3" fill="var(--context-gray)" stroke="var(--surface-1)" stroke-width="2" />`;
+      });
+
+      boxes += `<rect class="hit" data-i="${i}" x="${(cx - groupW / 2).toFixed(1)}" y="${padT}" width="${groupW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.innerHTML = `
+      <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
+      ${gridSvg}
+      ${xLabels}
+      ${boxes}
+    `;
+
+    svg.querySelectorAll("rect.hit").forEach((hit) => {
+      hit.addEventListener("pointerenter", showTip);
+      hit.addEventListener("pointermove", showTip);
+      hit.addEventListener("pointerleave", () => (tooltip.style.display = "none"));
+      hit.addEventListener("focus", showTip);
+    });
+
+    function showTip(e) {
+      const i = Number(e.currentTarget.dataset.i);
+      const s = stats[i];
+      const cx = padL + groupW * (i + 0.5);
+      tooltip.style.display = "block";
+      tooltip.style.left = cx + "px";
+      tooltip.style.top = yAt(s.q3) + "px";
+      tooltip.innerHTML = `
+        <div class="t-year">${years[i]}</div>
+        <div class="t-row"><span class="t-name">Max</span><span class="t-val">${s.max}</span></div>
+        <div class="t-row"><span class="t-name">Q3</span><span class="t-val">${fmt1(s.q3)}</span></div>
+        <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Mediaan</span><span class="t-val">${fmt1(s.median)}</span></div>
+        <div class="t-row"><span class="t-name">Q1</span><span class="t-val">${fmt1(s.q1)}</span></div>
+        <div class="t-row"><span class="t-name">Min</span><span class="t-val">${s.min}</span></div>
       `;
     }
   }
@@ -464,6 +585,86 @@ function renderMovesChart(data) {
   new ResizeObserver(draw).observe(shell);
 }
 
+// ---- Bar chart: age histogram for a selected year ----
+function renderHistogramChart(data) {
+  const shell = document.getElementById("histogram-chart-shell");
+  const svg = document.getElementById("histogram-chart");
+  const tooltip = document.getElementById("histogram-tooltip");
+  const yearSelect = document.getElementById("histogram-year");
+
+  yearSelect.innerHTML = data.years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  yearSelect.value = String(data.years[data.years.length - 1]);
+  yearSelect.addEventListener("change", draw);
+
+  function draw() {
+    const yearIndex = data.years.indexOf(Number(yearSelect.value));
+    const buckets = data.ageHistogram.buckets;
+    const counts = data.ageHistogram.countsByYear[yearIndex];
+
+    const width = shell.clientWidth || 600;
+    const height = 240;
+    const padL = 30, padR = 12, padT = 16, padB = 28;
+    const plotW = width - padL - padR, plotH = height - padT - padB;
+
+    const maxV = Math.max(1, ...counts);
+    const groupW = plotW / buckets.length;
+    const barW = Math.min(32, groupW * 0.6);
+
+    const yAt = (v) => padT + plotH - (v / maxV) * plotH;
+
+    let gridSvg = "";
+    const ticks = Math.min(4, maxV);
+    for (let t = 0; t <= ticks; t++) {
+      const v = Math.round((t / ticks) * maxV);
+      const y = yAt(v);
+      gridSvg += `<line class="gridline" x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`;
+      gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v}</text>`;
+    }
+
+    let bars = "";
+    let xLabels = "";
+    buckets.forEach((label, i) => {
+      const cx = padL + groupW * (i + 0.5);
+      xLabels += `<text class="axis-label" x="${cx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${label}</text>`;
+      const x = cx - barW / 2;
+      const h = (counts[i] / maxV) * plotH;
+      bars += `<rect class="hit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+      bars += `<rect x="${x.toFixed(1)}" y="${yAt(counts[i]).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 0).toFixed(1)}" rx="4" fill="var(--series-1)" />`;
+      if (counts[i] > 0) bars += `<text class="axis-label" x="${cx.toFixed(1)}" y="${(yAt(counts[i]) - 6).toFixed(1)}" text-anchor="middle">${counts[i]}</text>`;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.innerHTML = `
+      <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
+      ${gridSvg}
+      ${xLabels}
+      ${bars}
+    `;
+
+    svg.querySelectorAll("rect.hit").forEach((hit) => {
+      hit.addEventListener("pointerenter", showTip);
+      hit.addEventListener("pointermove", showTip);
+      hit.addEventListener("pointerleave", () => (tooltip.style.display = "none"));
+      hit.addEventListener("focus", showTip);
+    });
+
+    function showTip(e) {
+      const i = Number(e.currentTarget.dataset.i);
+      const rect = e.currentTarget;
+      tooltip.style.display = "block";
+      tooltip.style.left = (Number(rect.getAttribute("x")) + barW / 2) + "px";
+      tooltip.style.top = padT + "px";
+      tooltip.innerHTML = `
+        <div class="t-year">${buckets[i]} jaar</div>
+        <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Bewoners</span><span class="t-val">${counts[i]}</span></div>
+      `;
+    }
+  }
+
+  draw();
+  new ResizeObserver(draw).observe(shell);
+}
+
 function initThemeToggle() {
   const btn = document.getElementById("theme-toggle");
   const stored = localStorage.getItem("theme");
@@ -494,6 +695,8 @@ async function init() {
   renderHero(data);
   renderKpiRow(data);
   renderAgeChart(data);
+  renderBoxplotChart(data);
+  renderHistogramChart(data);
   renderMovesChart(data);
   renderDataTable(data);
 }
