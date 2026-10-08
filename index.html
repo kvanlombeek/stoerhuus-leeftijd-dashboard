@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Stoerhuus — gemiddelde leeftijd</title>
+<style>
+  :root {
+    color-scheme: light;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+
+    --series-1:        #2a78d6; /* avg age — accent */
+    --series-2:        #eb6834; /* move-ins / secondary */
+    --context-gray:    #898781; /* median age — context */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:            #0d0d0d;
+      --surface-1:       #1a1a19;
+      --text-primary:    #ffffff;
+      --text-secondary:  #c3c2b7;
+      --text-muted:      #898781;
+      --gridline:        #2c2c2a;
+      --baseline:        #383835;
+      --border:          rgba(255,255,255,0.10);
+
+      --series-1:        #3987e5;
+      --series-2:        #d95926;
+      --context-gray:    #898781;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:            #0d0d0d;
+    --surface-1:       #1a1a19;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --gridline:        #2c2c2a;
+    --baseline:        #383835;
+    --border:          rgba(255,255,255,0.10);
+
+    --series-1:        #3987e5;
+    --series-2:        #d95926;
+    --context-gray:    #898781;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px 16px 48px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .meta { color: var(--text-muted); font-size: 12px; }
+  .theme-toggle {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer;
+  }
+  .theme-toggle:hover { color: var(--text-primary); }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 2px; color: var(--text-primary); }
+  .card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .tile .label { color: var(--text-secondary); font-size: 12px; margin-bottom: 6px; }
+  .tile .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .tile .value { font-size: 24px; font-weight: 600; }
+  .tile .delta { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .tile svg.spark { display: block; margin-top: 8px; width: 100%; height: 28px; overflow: visible; }
+
+  .hero-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 4px; }
+  .hero-value { font-size: 48px; font-weight: 600; line-height: 1; }
+  .hero-delta { color: var(--text-secondary); font-size: 13px; }
+
+  .chart-shell { position: relative; }
+  svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .direct-label { fill: var(--text-primary); font-size: 12px; font-weight: 600; }
+  .direct-label.context { fill: var(--text-secondary); font-size: 11px; font-weight: 500; }
+
+  .crosshair { stroke: var(--baseline); stroke-width: 1; pointer-events: none; }
+  .hit { fill: transparent; }
+
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    transform: translate(-50%, -100%); margin-top: -10px;
+    white-space: nowrap; z-index: 5;
+    display: none;
+  }
+  .tooltip .t-year { color: var(--text-muted); margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; align-items: center; gap: 6px; }
+  .tooltip .t-key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  .tooltip .t-name { color: var(--text-secondary); }
+  .tooltip .t-val { color: var(--text-primary); font-weight: 600; margin-left: auto; padding-left: 10px; }
+
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-top: 8px; flex-wrap: wrap; }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .key { width: 12px; height: 2px; border-radius: 1px; }
+
+  .table-toggle {
+    border: 1px solid var(--border); background: transparent; color: var(--text-secondary);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; margin-top: 10px;
+  }
+  .table-toggle:hover { color: var(--text-primary); }
+
+  table.data-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; display: none; }
+  table.data-table.open { display: table; }
+  table.data-table th, table.data-table td {
+    text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--gridline);
+    font-variant-numeric: tabular-nums;
+  }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
+  table.data-table th { color: var(--text-muted); font-weight: 500; }
+
+  footer { color: var(--text-muted); font-size: 11px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Stoerhuus — gemiddelde leeftijd</h1>
+      <div class="meta" id="generated-meta"></div>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" type="button">Donker/licht</button>
+  </header>
+
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <div class="card">
+    <div class="hero-row">
+      <div>
+        <div class="sub">Gemiddelde leeftijd, laatste jaar</div>
+        <div class="hero-value" id="hero-value">—</div>
+      </div>
+      <div class="hero-delta" id="hero-delta"></div>
+    </div>
+    <div class="sub" style="margin-top:10px;">Gemiddelde leeftijd per jaar (mediaan in grijs als context)</div>
+    <div class="chart-shell" id="age-chart-shell">
+      <svg class="chart" id="age-chart"></svg>
+      <div class="tooltip" id="age-tooltip"></div>
+    </div>
+    <button class="table-toggle" data-target="age-table">Toon als tabel</button>
+    <table class="data-table" id="age-table">
+      <thead><tr><th>Jaar</th><th>Gem. leeftijd</th><th>Mediaan</th><th>Bewoners</th><th>Eenheden</th><th>Huishoudgrootte</th><th>Ingetrokken</th><th>Uitgetrokken</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Verhuizingen per jaar</h2>
+    <div class="sub">Nieuwe bewoners t.o.v. vertrokken bewoners, per jaar</div>
+    <div class="chart-shell" id="moves-chart-shell">
+      <svg class="chart" id="moves-chart"></svg>
+      <div class="tooltip" id="moves-tooltip"></div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="key" style="background:var(--series-1)"></span>Ingetrokken</div>
+      <div class="item"><span class="key" style="background:var(--series-2)"></span>Uitgetrokken</div>
+    </div>
+  </div>
+
+  <footer>Leeftijd berekend op 31 december van elk jaar. Bron: lokaal bijgehouden bewonerslijst (niet gepubliceerd); alleen geaggregeerde cijfers staan hier.</footer>
+</div>
+
+<script>
+const fmt1 = (n) => (n == null ? "—" : n.toLocaleString("nl-BE", { maximumFractionDigits: 1 }));
+const fmt2 = (n) => (n == null ? "—" : n.toLocaleString("nl-BE", { maximumFractionDigits: 2 }));
+const fmtInt = (n) => (n == null ? "—" : n.toLocaleString("nl-BE"));
+
+function signedDelta(curr, prev, decimals = 1) {
+  if (prev == null || curr == null) return "eerste jaar";
+  const d = curr - prev;
+  const sign = d > 0 ? "▲" : d < 0 ? "▼" : "▬";
+  const abs = Math.abs(d).toLocaleString("nl-BE", { maximumFractionDigits: decimals });
+  return `${sign} ${abs} t.o.v. vorig jaar`;
+}
+
+function makeSparkline(values) {
+  const w = 100, h = 28, pad = 2;
+  const clean = values.filter((v) => v != null);
+  const min = Math.min(...clean), max = Math.max(...clean);
+  const span = max - min || 1;
+  const n = values.length;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (n - 1)) * (w - pad * 2);
+    const y = v == null ? null : h - pad - ((v - min) / span) * (h - pad * 2);
+    return [x, y];
+  });
+  const valid = pts.filter((p) => p[1] != null);
+  const path = valid.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const last = valid[valid.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <path d="${path}" fill="none" stroke="var(--context-gray)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+    <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" />
+  </svg>`;
+}
+
+function renderKpiRow(data) {
+  const i = data.years.length - 1;
+  const p = i - 1;
+  const tiles = [
+    { label: "Bewoners", value: fmtInt(data.series.residents[i]), delta: signedDelta(data.series.residents[i], data.series.residents[p], 0), spark: data.series.residents },
+    { label: "Bewoonde eenheden", value: fmtInt(data.series.unitsOccupied[i]), delta: signedDelta(data.series.unitsOccupied[i], data.series.unitsOccupied[p], 0), spark: data.series.unitsOccupied },
+    { label: "Gem. huishoudgrootte", value: fmt2(data.series.avgHouseholdSize[i]), delta: signedDelta(data.series.avgHouseholdSize[i], data.series.avgHouseholdSize[p], 2), spark: data.series.avgHouseholdSize },
+    { label: "Mediaan leeftijd", value: fmt1(data.series.medianAge[i]), delta: signedDelta(data.series.medianAge[i], data.series.medianAge[p], 1), spark: data.series.medianAge },
+  ];
+  const row = document.getElementById("kpi-row");
+  row.innerHTML = tiles.map((t) => `
+    <div class="tile">
+      <div class="label">${t.label}</div>
+      <div class="row"><span class="value">${t.value}</span></div>
+      <div class="delta">${t.delta}</div>
+      ${makeSparkline(t.spark)}
+    </div>
+  `).join("");
+}
+
+function renderHero(data) {
+  const i = data.years.length - 1;
+  const p = i - 1;
+  document.getElementById("hero-value").textContent = fmt1(data.series.avgAge[i]) + " jaar";
+  document.getElementById("hero-delta").textContent = signedDelta(data.series.avgAge[i], data.series.avgAge[p], 1) + ` (${data.years[i]})`;
+}
+
+function renderDataTable(data) {
+  const tbody = document.querySelector("#age-table tbody");
+  tbody.innerHTML = data.years.map((y, i) => `
+    <tr>
+      <td>${y}</td>
+      <td>${fmt1(data.series.avgAge[i])}</td>
+      <td>${fmt1(data.series.medianAge[i])}</td>
+      <td>${fmtInt(data.series.residents[i])}</td>
+      <td>${fmtInt(data.series.unitsOccupied[i])}</td>
+      <td>${fmt2(data.series.avgHouseholdSize[i])}</td>
+      <td>${fmtInt(data.series.moveIns[i])}</td>
+      <td>${fmtInt(data.series.moveOuts[i])}</td>
+    </tr>
+  `).join("");
+  document.querySelectorAll(".table-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = document.getElementById(btn.dataset.target);
+      target.classList.toggle("open");
+      btn.textContent = target.classList.contains("open") ? "Verberg tabel" : "Toon als tabel";
+    });
+  });
+}
+
+// ---- Line chart: average age (accent) + median age (gray context) ----
+function renderAgeChart(data) {
+  const shell = document.getElementById("age-chart-shell");
+  const svg = document.getElementById("age-chart");
+  const tooltip = document.getElementById("age-tooltip");
+
+  function draw() {
+    const width = shell.clientWidth || 600;
+    const height = 260;
+    const padL = 36, padR = 46, padT = 16, padB = 28;
+    const plotW = width - padL - padR, plotH = height - padT - padB;
+
+    const years = data.years;
+    const avg = data.series.avgAge;
+    const med = data.series.medianAge;
+    const allVals = avg.concat(med);
+    const min = Math.floor(Math.min(...allVals) - 2);
+    const max = Math.ceil(Math.max(...allVals) + 2);
+
+    const xAt = (i) => padL + (i / (years.length - 1)) * plotW;
+    const yAt = (v) => padT + plotH - ((v - min) / (max - min)) * plotH;
+
+    const ticks = 4;
+    let gridSvg = "";
+    for (let t = 0; t <= ticks; t++) {
+      const v = min + (t / ticks) * (max - min);
+      const y = yAt(v);
+      gridSvg += `<line class="gridline" x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`;
+      gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+
+    let xLabels = "";
+    years.forEach((y, i) => {
+      xLabels += `<text class="axis-label" x="${xAt(i).toFixed(1)}" y="${height - 6}" text-anchor="middle">${y}</text>`;
+    });
+
+    const avgPath = avg.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
+    const medPath = med.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
+
+    const lastI = years.length - 1;
+    const avgEnd = `<circle cx="${xAt(lastI).toFixed(1)}" cy="${yAt(avg[lastI]).toFixed(1)}" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" />
+      <text class="direct-label" x="${(xAt(lastI) + 8).toFixed(1)}" y="${(yAt(avg[lastI]) + 4).toFixed(1)}">${fmt1(avg[lastI])}</text>`;
+    const medEnd = `<circle cx="${xAt(lastI).toFixed(1)}" cy="${yAt(med[lastI]).toFixed(1)}" r="3" fill="var(--context-gray)" stroke="var(--surface-1)" stroke-width="2" />
+      <text class="direct-label context" x="${(xAt(lastI) + 8).toFixed(1)}" y="${(yAt(med[lastI]) + 4).toFixed(1)}">mediaan ${fmt1(med[lastI])}</text>`;
+
+    let hits = "";
+    years.forEach((y, i) => {
+      hits += `<rect class="hit" data-i="${i}" x="${(xAt(i) - plotW / (years.length - 1) / 2).toFixed(1)}" y="${padT}" width="${(plotW / (years.length - 1)).toFixed(1)}" height="${plotH}" />`;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.innerHTML = `
+      <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
+      ${gridSvg}
+      ${xLabels}
+      <path d="${medPath}" fill="none" stroke="var(--context-gray)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+      <path d="${avgPath}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+      ${medEnd}
+      ${avgEnd}
+      <line class="crosshair" id="age-crosshair" x1="0" x2="0" y1="${padT}" y2="${padT + plotH}" style="display:none" />
+      ${hits}
+    `;
+
+    svg.querySelectorAll(".hit").forEach((hit) => {
+      hit.addEventListener("pointerenter", showTip);
+      hit.addEventListener("pointermove", showTip);
+      hit.addEventListener("pointerleave", () => {
+        tooltip.style.display = "none";
+        document.getElementById("age-crosshair").style.display = "none";
+      });
+      hit.addEventListener("focus", showTip);
+    });
+
+    function showTip(e) {
+      const i = Number(e.currentTarget.dataset.i);
+      const cx = xAt(i);
+      const crosshair = document.getElementById("age-crosshair");
+      crosshair.setAttribute("x1", cx.toFixed(1));
+      crosshair.setAttribute("x2", cx.toFixed(1));
+      crosshair.style.display = "block";
+
+      tooltip.style.display = "block";
+      tooltip.style.left = cx + "px";
+      tooltip.style.top = yAt(avg[i]) + "px";
+      tooltip.innerHTML = `
+        <div class="t-year">${years[i]}</div>
+        <div class="t-row"><span class="t-key" style="background:var(--series-1)"></span><span class="t-name">Gem. leeftijd</span><span class="t-val">${fmt1(avg[i])}</span></div>
+        <div class="t-row"><span class="t-key" style="background:var(--context-gray)"></span><span class="t-name">Mediaan</span><span class="t-val">${fmt1(med[i])}</span></div>
+      `;
+    }
+  }
+
+  draw();
+  new ResizeObserver(draw).observe(shell);
+}
+
+// ---- Grouped bar chart: move-ins vs move-outs ----
+function renderMovesChart(data) {
+  const shell = document.getElementById("moves-chart-shell");
+  const svg = document.getElementById("moves-chart");
+  const tooltip = document.getElementById("moves-tooltip");
+
+  function draw() {
+    const width = shell.clientWidth || 600;
+    const height = 220;
+    const padL = 30, padR = 12, padT = 16, padB = 28;
+    const plotW = width - padL - padR, plotH = height - padT - padB;
+
+    const years = data.years;
+    const ins = data.series.moveIns;
+    const outs = data.series.moveOuts;
+    const maxV = Math.max(1, ...ins.filter((v) => v != null), ...outs.filter((v) => v != null));
+
+    const groupW = plotW / years.length;
+    const barW = Math.min(22, groupW * 0.32);
+    const gap = 2;
+
+    const yAt = (v) => padT + plotH - (v / maxV) * plotH;
+
+    let gridSvg = "";
+    const ticks = Math.min(4, maxV);
+    for (let t = 0; t <= ticks; t++) {
+      const v = Math.round((t / ticks) * maxV);
+      const y = yAt(v);
+      gridSvg += `<line class="gridline" x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`;
+      gridSvg += `<text class="axis-label" x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v}</text>`;
+    }
+
+    let bars = "";
+    let xLabels = "";
+    years.forEach((y, i) => {
+      const groupCx = padL + groupW * (i + 0.5);
+      xLabels += `<text class="axis-label" x="${groupCx.toFixed(1)}" y="${height - 6}" text-anchor="middle">${y}</text>`;
+      if (ins[i] == null) return;
+
+      const xIn = groupCx - barW - gap / 2;
+      const xOut = groupCx + gap / 2;
+      const hIn = (ins[i] / maxV) * plotH;
+      const hOut = (outs[i] / maxV) * plotH;
+
+      bars += `<rect class="hit" data-i="${i}" data-s="in" x="${xIn.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+      bars += `<rect class="hit" data-i="${i}" data-s="out" x="${xOut.toFixed(1)}" y="${padT}" width="${barW.toFixed(1)}" height="${plotH.toFixed(1)}" />`;
+
+      bars += `<rect x="${xIn.toFixed(1)}" y="${yAt(ins[i]).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(hIn, 0).toFixed(1)}" rx="4" fill="var(--series-1)" />`;
+      bars += `<rect x="${xOut.toFixed(1)}" y="${yAt(outs[i]).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(hOut, 0).toFixed(1)}" rx="4" fill="var(--series-2)" />`;
+
+      if (ins[i] > 0) bars += `<text class="axis-label" x="${(xIn + barW / 2).toFixed(1)}" y="${(yAt(ins[i]) - 6).toFixed(1)}" text-anchor="middle">${ins[i]}</text>`;
+      if (outs[i] > 0) bars += `<text class="axis-label" x="${(xOut + barW / 2).toFixed(1)}" y="${(yAt(outs[i]) - 6).toFixed(1)}" text-anchor="middle">${outs[i]}</text>`;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.innerHTML = `
+      <line class="baseline" x1="${padL}" x2="${padL + plotW}" y1="${(padT + plotH).toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" />
+      ${gridSvg}
+      ${xLabels}
+      ${bars}
+    `;
+
+    svg.querySelectorAll("rect.hit").forEach((hit) => {
+      hit.addEventListener("pointerenter", showTip);
+      hit.addEventListener("pointermove", showTip);
+      hit.addEventListener("pointerleave", () => (tooltip.style.display = "none"));
+      hit.addEventListener("focus", showTip);
+    });
+
+    function showTip(e) {
+      const i = Number(e.currentTarget.dataset.i);
+      const s = e.currentTarget.dataset.s;
+      const rect = e.currentTarget;
+      tooltip.style.display = "block";
+      tooltip.style.left = (Number(rect.getAttribute("x")) + barW / 2) + "px";
+      tooltip.style.top = padT + "px";
+      const label = s === "in" ? "Ingetrokken" : "Uitgetrokken";
+      const color = s === "in" ? "var(--series-1)" : "var(--series-2)";
+      const val = s === "in" ? ins[i] : outs[i];
+      tooltip.innerHTML = `
+        <div class="t-year">${years[i]}</div>
+        <div class="t-row"><span class="t-key" style="background:${color}"></span><span class="t-name">${label}</span><span class="t-val">${val}</span></div>
+      `;
+    }
+  }
+
+  draw();
+  new ResizeObserver(draw).observe(shell);
+}
+
+function initThemeToggle() {
+  const btn = document.getElementById("theme-toggle");
+  const stored = localStorage.getItem("theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  btn.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme")
+      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+}
+
+async function init() {
+  initThemeToggle();
+  let data;
+  try {
+    const res = await fetch("data.json");
+    data = await res.json();
+  } catch (e) {
+    document.querySelector(".wrap").innerHTML =
+      '<p>Kon data.json niet laden. Open deze pagina via een lokale server (bv. <code>npx serve</code>) of via GitHub Pages, niet rechtstreeks als bestand.</p>';
+    return;
+  }
+  document.getElementById("generated-meta").textContent =
+    `Bijgewerkt: ${new Date(data.generatedAt).toLocaleDateString("nl-BE")} · ${data.ageReference}`;
+
+  renderHero(data);
+  renderKpiRow(data);
+  renderAgeChart(data);
+  renderMovesChart(data);
+  renderDataTable(data);
+}
+
+init();
+</script>
+</body>
+</html>
